@@ -6,11 +6,11 @@ A way for degenerate loggers to make their logs look pretty and orange
 
 1. Clone the repository.
    ```shell
-   git clone https://github.com/your-username/your-repository.git
+   git clone https://github.com/OmerBresinski/pimp-my-log.git
    ```
 2. Navigate to the project directory.
    ```shell
-   cd your-repository
+   cd pimp-my-log
    ```
 3. Install the dependencies.
    ```shell
