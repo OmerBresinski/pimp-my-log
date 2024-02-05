@@ -5,16 +5,17 @@ let file: string;
 let fileName: string;
 let linesToSubtract = 0;
 let isDoneSubtracting = false;
+let answers: any;
 
 const askQuestions = async () => {
   const filePath = await input({ message: "Enter the file path: " });
   const bossName = await input({ message: "Enter the boss name: " });
   const playerNames = await input({ message: "Enter the enhanced players names (ex: Johnny;Jane): " });
   const spellNames = await input({ message: "Enter the spell names (ex: Auto Shot,Chimera;SWING_DAMAGE,Fireball): " });
-  const otherDPSNames = await input({ message: "Enter names of other DPS players (ex: Adam;Eve;Abel): " });
+  const realmName = await input({ message: "Enter name of the realm (ex: LivingFlame): " });
   const dmgModifier = await input({ message: "Enter the damage modifier: " });
 
-  return { filePath, bossName, playerNames, dmgModifier, otherDPSNames, spellNames };
+  return { filePath, bossName, playerNames, dmgModifier, realmName, spellNames };
 };
 
 const filterByBossAndPlayer = (
@@ -22,16 +23,34 @@ const filterByBossAndPlayer = (
   bossName: string,
   playerName: string,
   spellName: string,
+  pNames: string,
+  forSubtraction: boolean
 ) => {
   const lines = fileE.split("\n");
-  return lines
-    .map((line, index) => ({ index, line }))
-    .filter(
-      ({ line }) =>
-        line.includes(bossName) &&
-        line.includes(playerName) &&
-        line.includes(spellName)
-    );
+  if (!forSubtraction){
+    return lines
+      .map((line, index) => ({ index, line }))
+      .filter(
+        ({ line }) =>
+          line.includes(bossName) &&
+          line.includes(playerName) &&
+          line.includes(spellName)
+      );
+  } else {
+    let pNamesDict: Record<string, boolean> = {};
+    pNames.split(";").forEach((pname) => {
+      pNamesDict[pname+"-"+playerName] = true;
+    });
+    return lines
+      .map((line, index) => ({ index, line }))
+      .filter(
+        ({ line }) =>
+          line.includes(bossName) &&
+          line.includes(playerName) &&
+          !line.split(",").some(word => pNamesDict[word]) &&
+          line.includes(spellName)
+      );
+  }  
 };
 
 const applyDmgModifier = (
@@ -105,20 +124,23 @@ const modifyDmg = (
   bossName: string,
   dmgModifier: number,
   remainder: number,
-  otherDPSNames: string,
+  realmName: string,
   modify: boolean,
   done: boolean
 ) => {
   if (done) return;
   let playerIndex = 0;
-  
+  let forSubtraction = dmgModifier < 0;
   pNames.split(";").forEach((name: string) => { 
     sNames.split(";")[playerIndex].split(",").forEach((spell: string) => {
       let lines = filterByBossAndPlayer(
         file,
         bossName,
         name,
-        spell
+        spell,
+        answers.playerNames,
+        forSubtraction
+
       );
       console.log(name + " " + spell +"\nnum lines: " + lines.length);
       if (modify){
@@ -134,7 +156,7 @@ const modifyDmg = (
         linesToSubtract += lines.length;
       }
     });
-    if (dmgModifier > 0){ // generic list for otherDPSNames
+    if (dmgModifier > 0){ // generic list for other DPS
       playerIndex++;
     }
   });
@@ -143,18 +165,20 @@ const modifyDmg = (
     if (linesToSubtract < totalDmgAdded){
       modifier = - Number((totalDmgAdded / linesToSubtract).toFixed(0))
       remainder = - (totalDmgAdded % linesToSubtract);
-    } 
-    modifyDmg(otherDPSNames, "SWING_DAMAGE_LANDED,SPELL_DAMAGE", bossName, modifier, remainder, otherDPSNames, !modify, done)
+    } else { 
+      remainder = 0;
+    }
+    modifyDmg(realmName, "SWING_DAMAGE_LANDED,SPELL_DAMAGE", bossName, modifier, remainder, realmName, !modify, done)
   }
 }
 async function main() {
-  const answers = await askQuestions();
+  answers = await askQuestions();
   file = readFileSync(answers.filePath, "utf-8");
   fileName = (String(answers.filePath.split("/").pop()));
   const currentDate = new Date();
   fileName = fileName.replace(".txt", "_modified"+currentDate.getTime()+".txt");
 
-  modifyDmg(answers.playerNames, answers.spellNames, answers.bossName,Number(answers.dmgModifier), 0, answers.otherDPSNames, true, false);
+  modifyDmg(answers.playerNames, answers.spellNames, answers.bossName,Number(answers.dmgModifier), 0, answers.realmName, true, false);
 
   console.log("Modified log file created successfully");
 }
