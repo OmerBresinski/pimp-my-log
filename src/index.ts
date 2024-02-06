@@ -5,23 +5,24 @@ let file: string;
 let fileName: string;
 let linesToSubtract = 0;
 let isDoneSubtracting = false;
+const spellNames = "SPELL_DAMAGE,RANGE_DAMAGE"
 let answers: any;
 
 const askQuestions = async () => {
   const filePath = await input({ message: "Enter the file path: " });
   const bossName = await input({ message: "Enter the boss name: " });
   const playerNames = await input({ message: "Enter the enhanced players names (ex: Johnny;Jane): " });
-  const spellNames = await input({ message: "Enter the spell names (ex: Auto Shot,Chimera;SWING_DAMAGE,Fireball): " });
+  //const spellNames = await input({ message: "Enter the spell names (ex: Auto Shot,Chimera;SWING_DAMAGE,Fireball): " });
   const realmName = await input({ message: "Enter name of the realm (ex: LivingFlame): " });
   const dmgModifier = await input({ message: "Enter the damage modifier: " });
 
-  return { filePath, bossName, playerNames, dmgModifier, realmName, spellNames };
+  return { filePath, bossName, playerNames, realmName, dmgModifier /*spellNames*/};
 };
 
 const filterByBossAndPlayer = (
   fileE: string,
   bossName: string,
-  playerName: string,
+  target: string,
   spellName: string,
   pNames: string,
   forSubtraction: boolean
@@ -33,20 +34,20 @@ const filterByBossAndPlayer = (
       .filter(
         ({ line }) =>
           line.includes(bossName) &&
-          line.includes(playerName) &&
+          line.includes(target) &&
           line.includes(spellName)
       );
   } else {
     let pNamesDict: Record<string, boolean> = {};
     pNames.split(";").forEach((pname) => {
-      pNamesDict[pname+"-"+playerName] = true;
+      pNamesDict["\"" + pname+"-"+target+"\""] = true;
     });
     return lines
       .map((line, index) => ({ index, line }))
       .filter(
         ({ line }) =>
           line.includes(bossName) &&
-          line.includes(playerName) &&
+          line.includes(target) &&
           !line.split(",").some(word => pNamesDict[word]) &&
           line.includes(spellName)
       );
@@ -56,14 +57,17 @@ const filterByBossAndPlayer = (
 const applyDmgModifier = (
   lines: Array<{ index: number; line: string }>,
   modifier: number,
-  remainder: number
+  remainder: number,
+  ability: string
 ) => {
-  console.log("Entered applyDmgModifier function");
+  let newRemainder = remainder;
+
+  console.log("Entered applyDmgModifier function. Ability: " + ability);
   if (lines.length == 0) {
     console.log("0 lines modified");
-    return lines;
+    return {newRemainder, mappedLines: lines};
   }
-  return lines.map(({ line, index }) => {
+  const mappedLines = lines.map(({ line, index }) => {
     const lineElements = line.split(",");
 
     const dmgValue = lineElements[28];
@@ -76,18 +80,21 @@ const applyDmgModifier = (
         if (remainder < 2 * modifier){ // both negative
           console.log("remainder: " + remainder);
           remainder -= modifier;
+          console.log("previous dmg: " + dmgValue);
+
           dmgToAdd = String(Number(dmgValue) + modifier + modifier );
           console.log("new remainder: " + remainder + ". dmgToAdd: " + dmgToAdd);
+          
         } else {
           dmgToAdd = String(Number(dmgValue) + modifier + remainder );
           remainder = 0;
         }
       }
-      
+      newRemainder = remainder;
       lineElements[28] = `${dmgToAdd}`;
       let increment = (Number(dmgToAdd)- Number(dmgValue))
       totalDmgAdded += increment;
-      if (totalDmgAdded == 0){ isDoneSubtracting = true; return { index, line: lineElements.join(",") };} 
+      if (totalDmgAdded == 0 && increment < 0){ isDoneSubtracting = true; return { index, line: lineElements.join(",") };} 
       if (totalDmgAdded < 0 ) {
         lineElements[28] = `${Number(dmgToAdd)+Math.abs(totalDmgAdded)}`;
         totalDmgAdded = 0;
@@ -101,10 +108,10 @@ const applyDmgModifier = (
 
     return { index, line: lineElements.join(",") };
   });
+  return { newRemainder, mappedLines };
 };
 
-const writeModifiedFile = (
-  file: string,
+const updateModifiedFile = (
   modifiedLines: Array<{ index: number; line: string }>
 ) => {
   
@@ -113,14 +120,12 @@ const writeModifiedFile = (
   modifiedLines.forEach(({ index, line }) => {
     lines[index] = line;
   });
+  file = lines.join("\n");
 
-  writeFileSync(fileName, lines.join("\n"));
-  file = readFileSync(fileName, "utf-8"); // TODO: Optimize such that the file variable is updated in the workspace instead of written and read from the OS
 };
 
 const modifyDmg = (
-  pNames: string,
-  sNames: string,
+  targets: string,
   bossName: string,
   dmgModifier: number,
   remainder: number,
@@ -129,36 +134,35 @@ const modifyDmg = (
   done: boolean
 ) => {
   if (done) return;
-  let playerIndex = 0;
   let forSubtraction = dmgModifier < 0;
-  pNames.split(";").forEach((name: string) => { 
-    sNames.split(";")[playerIndex].split(",").forEach((spell: string) => {
-      let lines = filterByBossAndPlayer(
-        file,
-        bossName,
-        name,
-        spell,
-        answers.playerNames,
-        forSubtraction
-
-      );
-      console.log(name + " " + spell +"\nnum lines: " + lines.length);
-      if (modify){
-        if (dmgModifier < 0){
-          done = true
-          console.log("negative modifier: " + dmgModifier + ". remainder: " + remainder);
+  targets.split(";").forEach((target: string) => { 
+    spellNames.split(",").forEach((spell: string) => {
+      if (!isDoneSubtracting){
+        let lines = filterByBossAndPlayer(
+          file,
+          bossName,
+          target,
+          spell,
+          answers.playerNames,
+          forSubtraction
+  
+        );
+        console.log(target + " " + spell +"\nnum lines: " + lines.length);
+        if (modify){
+          if (dmgModifier < 0){
+            done = true
+            console.log("negative modifier: " + dmgModifier + ". remainder: " + remainder);
+          }
+          let { newRemainder, mappedLines } = applyDmgModifier(lines, dmgModifier, remainder, spell);
+          
+          remainder = newRemainder;
+          updateModifiedFile(mappedLines);
+          console.log("Total dmg added after player " + target + " and spell " + spell + ": " + totalDmgAdded);
+        } else { // for dmg reduction, first only count the amount of lines, so we can calculate how much to subtract per line
+          linesToSubtract += lines.length;
         }
-        let modifiedLines = applyDmgModifier(lines, dmgModifier, remainder);
-
-        writeModifiedFile(file, modifiedLines);
-        console.log("Total dmg added after player " + name + " and spell " + spell + ": " + totalDmgAdded);
-      } else { // for dmg reduction, first only count the amount of lines, so we can calculate how much to subtract per line
-        linesToSubtract += lines.length;
       }
     });
-    if (dmgModifier > 0){ // generic list for other DPS
-      playerIndex++;
-    }
   });
   if (!isDoneSubtracting){
     let modifier: number = -1;
@@ -168,7 +172,7 @@ const modifyDmg = (
     } else { 
       remainder = 0;
     }
-    modifyDmg(realmName, "SWING_DAMAGE_LANDED,SPELL_DAMAGE", bossName, modifier, remainder, realmName, !modify, done)
+    modifyDmg(realmName, bossName, modifier, remainder, realmName, !modify, done)
   }
 }
 async function main() {
@@ -178,8 +182,9 @@ async function main() {
   const currentDate = new Date();
   fileName = fileName.replace(".txt", "_modified"+currentDate.getTime()+".txt");
 
-  modifyDmg(answers.playerNames, answers.spellNames, answers.bossName,Number(answers.dmgModifier), 0, answers.realmName, true, false);
+  modifyDmg(answers.playerNames, answers.bossName, Number(answers.dmgModifier), 0, answers.realmName, true, false);
 
+  writeFileSync(fileName, file);
   console.log("Modified log file created successfully");
 }
 
