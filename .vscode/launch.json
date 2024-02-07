@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Node.js",
+      "program": "src/index.ts",
+      "runtimeArgs": ["--inspect"],
+      "sourceMaps": true,
+      "outFiles": ["dist/index.js"],
+      "preLaunchTask": "tsc: build - tsconfig.json"
+    }
+  ]
+}
