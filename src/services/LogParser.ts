@@ -34,7 +34,6 @@ export class LogParser {
   };
 
   private preparePlayerDataByBoss = () => {
-    console.log(this.playersCache);
     this.playerDataByBoss = this.bossData.filter(
       ({ line }) =>
         line.includes(this.bossName) &&
